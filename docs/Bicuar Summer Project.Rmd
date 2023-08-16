@@ -2,7 +2,10 @@
 title: "Bicuar Summer Project"
 author: "Theodora Chan"
 date: "2023-07-14"
-output: html_document
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
 ---
 
 library(tidyverse)
@@ -34,27 +37,28 @@ library(ape)
 library("V.PhyloMaker2")
 
 species_list <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/species_list.csv")
-
+```
   ##phylo contains a species list and the phylogenetic tree
+```{r}
 phylo <- phylo.maker(sp.list = species_list, tree = GBOTB.extended.TPL, nodes = nodes.info.1.TPL, scenarios="S3")
-
-  ##taking out only the tree from phylo and write it as .tre file in directory
+```
+ ##taking out only the tree from phylo and write it as .tre file in directory and plotting the phylogeny
+```{r}
 write.tree(phylo$scenario.3, "sample.tre")
 
-  ##plotting the phylogeny
 library(ggtree)
 library(phytools)
 plotTree(phylo$scenario.3,ftype="i",lwd=1,fsize=0.6,type="fan",part=0.88)
 obj<-axis(1,pos=-20,at=seq(50,150,by=50),cex.axis=0.5,labels=FALSE)
 text(obj,rep(-13,length(obj)),obj,cex=0.6)
 text(mean(obj),-40,"time (ma)",cex=0.6)
-
+```
+```{r}
 is.rooted(phylo$scenario.3)
-#-> True
 is.ultrametric(phylo$scenario.3)
-#-> True
-
+```
   ##Distance matrix
+```{r}
 p.dist.mat <- cophenetic(phylo$scenario.3)
 ```
 
