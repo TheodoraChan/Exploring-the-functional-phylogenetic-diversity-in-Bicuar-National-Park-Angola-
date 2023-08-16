@@ -3,8 +3,8 @@ title: "Bicuar Summer Project"
 author: "Theodora Chan"
 date: "2023-07-14"
 output:
-  word_document: default
   html_document: default
+  word_document: default
   pdf_document: default
 ---
 
