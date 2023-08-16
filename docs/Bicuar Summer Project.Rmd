@@ -1,0 +1,1044 @@
+---
+title: "Bicuar Summer Project"
+author: "Theodora Chan"
+date: "2023-07-14"
+output: html_document
+---
+
+library(tidyverse)
+
+
+#Extract max census date data (filter for data of latest census for each plot and remove 'Indet indet' species data)
+```{r}
+stems_original <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Data/stems_original.csv")
+stemsmaxc <-stems_original %>%
+  dplyr::group_by(plot_id) %>% 
+  filter(census_date == max(census_date)) %>% 
+  filter(!species_name_clean == "Indet_indet")
+```
+
+
+#Site species matrix
+```{r}
+library(MASS, reshape)
+stemsmaxc$value <- 1
+site_sp_matrix <- reshape::cast(stemsmaxc,  plot_id~ species_name_clean, value = "value")
+write.csv(site_sp_matrix, file = "site_sp_matrix.csv", row.names = T)
+site_sp_matrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_sp_matrix.csv")
+```
+
+
+#Phylogeny and phylogenetic distance matrix (distance between each pair of terminal taxa)
+```{r}
+library(ape)
+library("V.PhyloMaker2")
+
+species_list <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/species_list.csv")
+
+  ##phylo contains a species list and the phylogenetic tree
+phylo <- phylo.maker(sp.list = species_list, tree = GBOTB.extended.TPL, nodes = nodes.info.1.TPL, scenarios="S3")
+
+  ##taking out only the tree from phylo and write it as .tre file in directory
+write.tree(phylo$scenario.3, "sample.tre")
+
+  ##plotting the phylogeny
+library(ggtree)
+library(phytools)
+plotTree(phylo$scenario.3,ftype="i",lwd=1,fsize=0.6,type="fan",part=0.88)
+obj<-axis(1,pos=-20,at=seq(50,150,by=50),cex.axis=0.5,labels=FALSE)
+text(obj,rep(-13,length(obj)),obj,cex=0.6)
+text(mean(obj),-40,"time (ma)",cex=0.6)
+
+is.rooted(phylo$scenario.3)
+#-> True
+is.ultrametric(phylo$scenario.3)
+#-> True
+
+  ##Distance matrix
+p.dist.mat <- cophenetic(phylo$scenario.3)
+```
+
+
+#Phylogenetic diversity metrics (PD, MPD and MNTD; excluding Rao's QE)
+```{r}
+library("PhyloMeasures")
+
+  ##site_sp_matrixX: site species matrix with plot_id as row names and removed from dataset
+rownames(site_sp_matrix) <- site_sp_matrix$plot_id
+site_sp_matrixX <- site_sp_matrix[,-c(1, 2)]
+list.spp <- gsub(pattern = " ", replacement = "_", x = stems_original$species_name_clean)
+
+  ##Faith’s phylogenetic diversity (PD)
+pd.query(phylo$scenario.3, site_sp_matrixX, standardize = TRUE)
+pd.query(phylo$scenario.3, site_sp_matrixX, standardize = FALSE)
+
+  ##Mean pairwise distance (MPD)
+mpd.query(phylo$scenario.3, site_sp_matrixX, standardize = TRUE)
+mpd.query(phylo$scenario.3, site_sp_matrixX, standardize = FALSE)
+
+  ##Mean nearest taxon distance (MNTD)
+mntd.query(phylo$scenario.3, site_sp_matrixX, standardize = TRUE)
+mntd.query(phylo$scenario.3, site_sp_matrixX, standardize = FALSE)
+```
+
+
+#Rao's QE
+
+
+##Run code of function
+```{r}
+library(ade4)
+Rao<-function(sample, dfunc, dphyl, weight=F, Jost=F, structure=NULL)   {
+  library(ade4)
+
+####function Qdecomp by by VillÈger & Mouillot (J Ecol, 2008) modify by Wilfried Thuiller #####
+
+Qdecomp = function(functdist,abundances, w=TRUE) {
+
+# number and names of local communities
+c<-dim(abundances)[1] ; namescomm<-row.names(abundances)
+abundances<-as.matrix(abundances)
+
+# if necessary, transformation of functdist into matrix object
+if (is.matrix(functdist)==F) functdist<-as.matrix(functdist)
+
+# checking 'abundances' and 'functdist' dimensions
+if (dim(functdist)[1]!=dim(functdist)[2])  stop("error : 'functdist' has different number of rows and columns")
+if (dim(abundances)[2]!=dim(functdist)[1]) stop("error : different number of species in 'functdist' and 'abundances' ")
+
+# checking NA absence in 'functdist'
+if (length(which(is.na(functdist)==T))!=0)  stop("error : NA in 'functdist'")
+
+# replacement of NA by 0 in abundances
+if (is.na(sum(abundances))==T)  {
+for (i in 1:dim(abundances)[1])
+for (j in 1:dim(abundances)[2] )
+{ if(is.na(abundances[i,j])==T) abundances[i,j]<- 0 } # end of i j
+} # end of if
+
+#  species richness and total abundances in local communities
+abloc<-apply(abundances,1,sum)
+nbsploc<-apply(abundances,1,function(x) {length(which(x>0))} )
+
+# relative abundances inside each local community
+locabrel<-abundances/abloc
+
+# alpha diversity
+Qalpha=apply(locabrel, 1, function(x) t(x) %*%  functdist %*% x)
+
+#Wc
+Wc = abloc/sum(abloc)
+
+# abundance-weighted mean alpha
+mQalpha<-as.numeric(Qalpha%*%abloc/sum(abloc) )
+
+#Villeger's correction
+if(w==T) {
+	# abundance-weighted mean alpha
+	mQalpha<-as.numeric(Qalpha%*%abloc/sum(abloc) )
+	totabrel<-apply(abundances,2,sum)/sum(abundances) 
+	Qalpha = Qalpha*Wc
+}	
+
+# Rao's original definition: mean of Pi
+else {
+	mQalpha<-mean(Qalpha)
+	totabrel<-apply(locabrel,2,mean)  
+	}
+
+
+# gamma diversity
+Qgamma<-( totabrel %*% functdist %*% totabrel ) [1]
+
+# beta diversity
+Qbeta<-as.numeric( Qgamma-mQalpha )
+
+# standardized beta diversity
+Qbetastd<-as.numeric(Qbeta/Qgamma )
+
+# list of results
+resQ<-list(Richness_per_plot=nbsploc, Relative_abundance= locabrel, Pi=totabrel, Wc=Wc, Species_abundance_per_plot=abloc, Alpha=Qalpha, Mean_alpha=mQalpha, Gamma=Qgamma, Beta=Qbeta, Standardize_Beta =Qbetastd )
+
+return(resQ)
+
+} 
+
+
+###########function disc originally from S. Pavoine####
+ 
+disc = function (samples, dis = NULL, structures = NULL, Jost = F)
+{
+    if (!inherits(samples, "data.frame"))
+        stop("Non convenient samples")
+    if (any(samples < 0))
+        stop("Negative value in samples")
+    if (any(apply(samples, 2, sum) < 1e-16))
+        stop("Empty samples")
+    if (!is.null(dis)) {
+        if (!inherits(dis, "dist"))
+            stop("Object of class 'dist' expected for distance")
+       # if (!is.euclid(dis))
+            #stop("Euclidean property is expected for distance")
+        dis <- as.matrix(dis)
+        if (nrow(samples) != nrow(dis))
+            stop("Non convenient samples")
+    }
+   if (!is.null(structures)) {
+        if (!inherits(structures, "data.frame"))
+            stop("Non convenient structures")
+        m <- match(apply(structures, 2, function(x) length(x)),
+            ncol(samples), 0)
+        if (length(m[m == 1]) != ncol(structures))
+            stop("Non convenient structures")
+        m <- match(tapply(1:ncol(structures), as.factor(1:ncol(structures)),
+            function(x) is.factor(structures[, x])), TRUE, 0)
+        if (length(m[m == 1]) != ncol(structures))
+            stop("Non convenient structures")
+    }
+    Structutil <- function(dp2, Np, unit, Jost) {
+        if (!is.null(unit)) {
+            modunit <- model.matrix(~-1 + unit)
+            sumcol <- apply(Np, 2, sum)
+            Ng <- modunit * sumcol
+            lesnoms <- levels(unit)
+        }
+        else {
+            Ng <- as.matrix(Np)
+            lesnoms <- colnames(Np)
+        }
+        sumcol <- apply(Ng, 2, sum)
+        Lg <- t(t(Ng)/sumcol)
+        colnames(Lg) <- lesnoms
+        Pg <- as.matrix(apply(Ng, 2, sum)/nbhaplotypes)
+        rownames(Pg) <- lesnoms
+        deltag <- as.matrix(apply(Lg, 2, function(x) t(x) %*%
+            dp2 %*% x))
+        ug <- matrix(1, ncol(Lg), 1)
+        if(Jost) {
+            #dp2 <- as.matrix(as.dist(dfunct01))
+            deltag <- as.matrix(apply(Lg, 2, function(x) t(x) %*% dp2 %*% x))
+            X=t(Lg) %*% dp2 %*% Lg
+            alpha=1/2 * (deltag %*% t(ug) + ug %*% t(deltag))
+            Gam = (X + alpha)/2
+            alpha = 1/(1-alpha) #Jost correction
+            Gam = 1/(1-Gam)  #Jost correction
+            Beta_add = Gam - alpha
+            Beta_mult = 100*(Gam - alpha)/Gam
+        }
+        else {
+          deltag <- as.matrix(apply(Lg, 2, function(x) t(x) %*% dp2 %*% x))
+          X=t(Lg) %*% dp2 %*% Lg
+          alpha=1/2 * (deltag %*% t(ug) + ug %*% t(deltag))
+          Gam = (X + alpha)/2
+          Beta_add = Gam - alpha
+          Beta_mult = 100*(Gam - alpha)/Gam
+        }
+        colnames(Beta_add) <- lesnoms
+        rownames(Beta_add) <- lesnoms
+        return(list(Beta_add = as.dist(Beta_add), Beta_mult = as.dist(Beta_mult),
+          Gamma=as.dist(Gam), Alpha=as.dist(alpha), Ng = Ng, Pg = Pg))
+    }
+    Diss <- function(dis, nbhaplotypes, samples, structures, Jost) {
+        structutil <- list(0)
+        structutil[[1]] <- Structutil(dp2 = dis, Np = samples, NULL, Jost)
+        diss <- list(structutil[[1]]$Alpha, structutil[[1]]$Gamma, structutil[[1]]$Beta_add, structutil[[1]]$Beta_mult)
+         if (!is.null(structures)) {
+            for (i in 1:length(structures)) {
+                structutil[[i + 1]] <- Structutil(as.matrix(structutil[[1]]$Beta_add), 
+                  structutil[[1]]$Ng, structures[, i], Jost)
+            }
+            diss <- c(diss, tapply(1:length(structures), factor(1:length(structures)), 
+                function(x) as.dist(structutil[[x + 1]]$Beta_add)))
+        }    
+        return(diss)
+    }
+    nbhaplotypes <- sum(samples)
+    diss <- Diss(dis, nbhaplotypes, samples, structures, Jost)
+    if (!is.null(structures)) {
+        names(diss) <- c("Alpha", "Gamma", "Beta_add", "Beta_prop", "Beta_region")
+        return(diss)
+    }
+    names(diss) <- c("Alpha", "Gamma", "Beta_add", "Beta_prop")
+    return(diss)
+}
+
+
+
+
+
+  
+  TD<-FD<-PD<-NULL
+
+ #Taxonomic diversity
+  dS <- matrix(1, nrow(sample), nrow(sample)) - diag(rep(1, nrow(sample)))
+  temp_qdec<- Qdecomp(dS,t(sample), w=weight)   #Call the Qdecomp function for alpha, gamma and beta estimations.
+  TD$Richness_per_plot = temp_qdec$Richness_per_plot
+  TD$Relative_abundance = temp_qdec$Relative_abundance
+  TD$Pi = temp_qdec$Pi
+  TD$Wc = temp_qdec$Wc
+  if(Jost){
+    TD$Mean_Alpha = 1/(1-temp_qdec$Mean_alpha)
+    TD$Alpha = 1/(1-temp_qdec$Alpha)
+    TD$Gamma = 1/(1-temp_qdec$Gamma)
+    TD$Beta_add = (TD$Gamma -TD$Mean_Alpha )
+    TD$Beta_prop = 100*TD$Beta_add/TD$Gamma
+    #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+    TD$Pairwise_samples<- disc(as.data.frame(sample), as.dist(dS), structure=structure, Jost=Jost)
+    }
+  else {
+    TD$Mean_Alpha = temp_qdec$Mean_alpha
+    TD$Alpha = temp_qdec$Alpha
+    TD$Gamma = temp_qdec$Gamma
+    TD$Beta_add = (TD$Gamma -TD$Mean_Alpha )
+    TD$Beta_prop = 100*TD$Beta_add/TD$Gamma
+    #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+    TD$Pairwise_samples <- disc(as.data.frame(sample), as.dist(dS), structure=structure, Jost=Jost)
+  }
+  
+  #Functional diversity estimation
+  if(!is.null(dfunc)){
+    FD<-list()
+    if(Jost){
+      if(max(dfunc)>1) dfunc <- dfunc/max(dfunc)   #Make sure the distance are between 0 and 1 for the Jost correction
+      temp_qdec<- Qdecomp(dfunc,t(sample), w=weight)   #Call the Qdecomp function for alpha, gamma and beta estimations.
+       #  FD$Alpha = 1/(1-temp_qdec$Alpha)
+  		 #  FD$Mean_Alpha = mean(FD$Alpha)
+   		FD$Mean_Alpha = 1/(1-temp_qdec$Mean_alpha)
+      FD$Alpha = 1/(1-temp_qdec$Alpha)
+      FD$Gamma = 1/(1-temp_qdec$Gamma)
+      FD$Beta_add = (FD$Gamma -FD$Mean_Alpha )
+      FD$Beta_prop = 100*FD$Beta_add/FD$Gamma
+      #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+      FD$Pairwise_samples<- disc(as.data.frame(sample), as.dist(dfunc), structure=structure, Jost=Jost)
+    }
+    else {
+      temp_qdec<- Qdecomp(dfunc,t(sample), w=weight) #Call the Qdecomp function for alpha, gamma and beta estimations.
+      FD$Mean_Alpha = temp_qdec$Mean_alpha
+      FD$Alpha = temp_qdec$Alpha
+      FD$Gamma = temp_qdec$Gamma
+      FD$Beta_add = (FD$Gamma -FD$Mean_Alpha )
+      FD$Beta_prop = 100*FD$Beta_add/FD$Gamma
+      #FD$Beta =  temp_qdec$Beta#
+      #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+      FD$Pairwise_samples <- disc(as.data.frame(sample), as.dist(dfunc), structure=structure, Jost=Jost)
+    }
+  }
+  #Phylogenetic diversity estimation
+  if(!is.null(dphyl)){
+    PD<-list()
+    if(Jost){
+      if(max(dphyl)>1) dphyl <- dphyl/max(dphyl)   #Make sure the distance are between 0 and 1 for the Jost correction
+      temp_qdec<- Qdecomp(dphyl,t(sample), w=weight)   #Call the Qdecomp function for alpha, gamma and beta estimations.
+      PD$Mean_Alpha = 1/(1-temp_qdec$Mean_alpha)
+      PD$Alpha = 1/(1-temp_qdec$Alpha)
+      PD$Gamma = 1/(1-temp_qdec$Gamma)
+      PD$Beta_add = (PD$Gamma -PD$Mean_Alpha )
+      PD$Beta_prop = 100*PD$Beta_add/PD$Gamma
+      #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+      PD$Pairwise_samples<- disc(as.data.frame(sample), as.dist(dphyl), structure=structure, Jost=Jost)
+    }
+    else {
+      temp_qdec<- Qdecomp(dphyl,t(sample), w=weight)  #Call the Qdecomp function for alpha, gamma and beta estimations.
+      PD$Mean_Alpha = temp_qdec$Mean_alpha
+      PD$Alpha = temp_qdec$Alpha
+      PD$Gamma = temp_qdec$Gamma
+      PD$Beta_add = (PD$Gamma -PD$Mean_Alpha )
+      PD$Beta_prop = 100*PD$Beta_add/PD$Gamma
+      #PD$Beta =  temp_qdec$Beta
+      #Call the disc function for alpha, gamma and beta estimations for each pair of samples
+      PD$Pairwise_samples <- disc(as.data.frame(sample), as.dist(dphyl), structure=structure, Jost=Jost)
+    }
+  
+  
+  
+  
+  }
+  out <- list(TD, FD, PD)
+  names(out) <- c("TD", "FD", "PD")
+  return(out)
+
+}
+```
+
+
+##Rao's QE Phylogenetic diversity
+  ###With correction to column names
+```{r}
+Rao(t(data.frame(site_sp_matrixX)), dfunc = NULL, dphyl = p.dist.mat[colnames(site_sp_matrixX),colnames(site_sp_matrixX)], Jost=TRUE)$PD$Alpha
+Rao(t(data.frame(site_sp_matrixX)), dfunc = NULL, dphyl = p.dist.mat[colnames(site_sp_matrixX),colnames(site_sp_matrixX)], Jost=FALSE)$PD$Alpha
+```
+
+
+##Rao's QE Functional diversity
+
+
+###Calculation of trait means, then add them to 'sp_traits_funcmatrix' excel 
+```{r}
+      ####leaf area
+as.character(Total_leaf_area$species)
+install.packages("data.table")
+library("data.table")
+TLA <- as.data.frame(Total_leaf_area)
+setDT(TLA)
+TLA[ ,list(mean=mean(Average_leaf_area)), by=species]
+
+      ####LMA
+LMA <- as.data.frame(leaf_traits_lab)
+setDT(LMA)
+LMA[ ,list(mean=mean(LMA)), by=species]
+
+      ####%N%C
+NC <- as.data.frame(MR_CN)
+setDT(NC)
+NC[ ,list(mean=mean(C)), by=species]
+NC[ ,list(mean=mean(N)), by=species]
+```
+
+
+###Checking normality of trait data
+  ####result: Leaf_area, LMA not normal
+```{r}
+sp_traits_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/sp_traits_funcmatrix.csv")
+sp_traits_funcmatrixx <- sp_traits_funcmatrix[,-1]
+rownames(sp_traits_funcmatrixx) <- sp_traits_funcmatrix$Species
+
+      ####Looking at density plots
+for (i in list("Leaf_area", "LMA", "C", "N")) {
+    p<-ggplot(sp_traits_funcmatrixx, aes_string(x=i)) +
+    geom_density() +
+    theme_classic()
+    print(p)}
+
+      ####Shapiro-Wilk normality test
+apply(sp_traits_funcmatrixx, 2, FUN=shapiro.test)
+```
+
+
+###Transformation of Leaf_area and LMA
+```{r}
+hist(sp_traits_funcmatrixx$Leaf_area %>% log()) 
+qqnorm(sp_traits_funcmatrixx$Leaf_area %>% log())
+qqline(sp_traits_funcmatrixx$Leaf_area %>% log())
+shapiro.test(sp_traits_funcmatrixx$Leaf_area %>% log())
+shapiro.test(sp_traits_funcmatrixx$LMA %>% log())
+library(MASS)
+model <- lm(sp_traits_funcmatrixx$LMA ~ sp_traits_funcmatrixx$C)
+zz<-boxcox(model)
+lamba = zz$x[which.max(zz$y)]
+View(lamba)
+library(lattice)
+sp_traits_funcmatrixx %>% mutate(
+  LMA.tr = ((LMA^lamba-1)/lamba)) %>% pull(LMA.tr) %>% densityplot()
+sp_traits_funcmatrixx <- sp_traits_funcmatrixx %>% mutate(LMA.tr = ((LMA^lamba-1)/lamba), Leaf_area.tr = log(Leaf_area))
+shapiro.test(sp_traits_funcmatrixx$LMA.tr)
+shapiro.test(sp_traits_funcmatrixx$Leaf_area.tr)
+```
+
+
+###Functional dissimilarity matrix building
+```{r}
+library("gawdis")
+func.dist.matrix <- gawdis::gawdis(sp_traits_funcmatrixx %>% 
+                                     dplyr::select(-Leaf_area, -LMA))
+func.dist.matrix2 <- gawdis::gawdis(sp_traits_funcmatrixx %>% 
+                                      dplyr::select(-Leaf_area, -LMA) %>% scale())
+
+      ####See if standardization is needed for trait data, NO -> func.dist.matrix used
+
+lm(as.vector(as.matrix(func.dist.matrix)) ~  as.vector(as.matrix(func.dist.matrix2)) ) %>% plot()
+      ####Check if columns of matrix is in alphabetical order
+View(colnames(as.matrix(func.dist.matrix)))
+```
+
+
+###Subset data for the 29 species with functional trait data
+```{r}
+      ####Make subset of the 29 species data from original data, 8398/9090 observations extracted (92.39%)
+list.func.spp <- sp_traits_funcmatrix$Species
+stems29 <- stemsmaxc %>% filter(species_name_clean %in% list.func.spp)
+
+      ####Make site - total aboveground biomass matrix for the species with trait data
+new.object <-stems29 %>% group_by(plot_id,species_name_clean) %>% summarise(sum_agb = sum(na.omit(agb))) %>% data.frame()
+write.csv(x = new.object, file = "site_spmassIndex_funcmatrix.csv")
+site.sp.func <- reshape::cast(new.object, plot_id ~ species_name_clean, value = "sum_agb")
+site.sp.func[is.na(site.sp.func)] <- 0
+rownames(site.sp.func) <- site.sp.func$plot_id
+site.sp.func <- site.sp.func[,-1]
+write.csv(x = site.sp.func, file = "site_spmass_funcmatrix.csv", col.names = colnames(site.sp.func))
+
+      ####Make site - species abundance matrix for the species with trait data
+stems29$value <- 1
+new.object2 <- reshape::cast(stems29,  plot_id~ species_name_clean, value = "value")
+write.csv(x = new.object2, file = "site_spabun_funcmatrix.csv", row.names = T)
+```
+
+
+###FD calculation using species abundance
+```{r}
+site_spabun_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_spabun_funcmatrix.csv")
+site_spabun_funcmatrixx <- site_spabun_funcmatrix[,-c(1,2)]
+rownames(site_spabun_funcmatrixx) <- site_spabun_funcmatrix$plot_id
+View(site_spabun_funcmatrixx)
+
+Rao(t(site_spabun_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=TRUE)$FD$Alpha
+Rao(t(site_spabun_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=FALSE)$FD$Alpha
+```
+
+
+###FD calculation using species biomass
+```{r}
+site_spmass_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_spmass_funcmatrix.csv")
+site_spmass_funcmatrixx <- site_spmass_funcmatrix[,-1]
+rownames(site_spmass_funcmatrixx) <- site_spmass_funcmatrix$X
+View(site_spmass_funcmatrixx)
+
+Rao(t(site_spmass_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=TRUE)$FD$Alpha
+Rao(t(site_spmass_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=FALSE)$FD$Alpha
+```
+
+
+#PCA
+
+##z-score standardization of env variables
+```{r}
+site_env_matrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_env_matrix.csv")
+site_env_matrixX <- site_env_matrix[,-1]
+rownames(site_env_matrixX) <- site_env_matrix$plot
+
+site_env_matrix.rda <- site_env_matrixX %>% 
+  dplyr::select(-Na_Axial, -pH_KCl, -Litter_fresh_mass, -Grass_fresh_mass, -Grass_moisture) %>% 
+  scale() %>% data.frame()
+```
+
+
+##Analysis and visualization of results
+```{r}
+##for looking into the correlation between soil variables before running the RDA
+
+library(ade4)
+pca.soil <- dudi.pca(df = site_env_matrix.rda, center = F, scale = F, scannf = FALSE)
+head(summary(pca.soil))
+
+##Visualizing the results
+library(factoextra)
+fviz_eig(pca.soil)
+fviz_pca_biplot(pca.soil, repel = TRUE,
+                col.var = "contrib", 
+                gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), col.ind = "#696969" )
+```
+
+```{r}
+#For looking into dominant species in different plots
+
+#remove ABG_1 from site_sp_matrixX as env variables are not measured
+site_sp_matrixXX1 <- site_sp_matrixX[-1,] 
+
+#Hellinger transformation
+spe.hell <- decostand (site_sp_matrixXX1, 'hell')
+
+pca.sp <- dudi.pca(df = spe.hell, center = F, scale = F, scannf = FALSE)
+head(summary(pca.sp))
+
+library(factoextra)
+fviz_eig(pca.sp)
+fviz_pca_biplot(pca.sp, repel = TRUE,
+                col.var = "contrib", 
+                gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), col.ind = "#696969" )
+```
+
+
+#RDA
+```{r}
+library(ade4)
+library(adegraphics)
+library(adespatial)
+library(vegan)
+library(vegan3d)
+library(MASS)
+library(ellipse)
+library(FactoMineR)
+library(rrcov)
+
+#Correlation between env variables
+library(PerformanceAnalytics)
+chart.Correlation(site_env_matrixX)
+```
+
+
+##First RDA with all variables
+```{r}
+site_env_matrix.rda
+
+RDA <- rda(spe.hell ~ . , site_env_matrix.rda)
+
+  ##R2 adjustment based on number of variables entering the model 
+    ###e.g. more variable -> explanatory power likely to be higher
+adjR2 <- RsquareAdj(RDA)
+anova.cca(RDA)
+```
+
+
+##Stepwise selection in both directions
+```{r}
+    ###Null model
+null.rda <- rda(spe.hell ~ 1, site_env_matrix.rda)
+    ####C.N_ratio, P, Mg are the selected variables
+sel.ordi2step <- ordiR2step(null.rda, scope = formula(RDA), direction = "both", permutations = 999, R2scope = F)
+
+sel.ordi2step
+RsquareAdj(sel.ordi2step)
+anova.cca(sel.ordi2step)
+```
+
+
+##New RDA using selected variables + variables not showing sig correlation with the selected ones (Al, X.Sand, pH_H2O, Ca, Na_Radial) until highest R2 and significance
+```{r}
+RDA2 <- rda(spe.hell ~ C.N_ratio+P+Mg+Al+X.Sand+pH_H2O+Ca+Na_Radial , site_env_matrix.rda)
+RDA3 <- rda(spe.hell ~ C.N_ratio+P+Mg+Al , site_env_matrix.rda)
+RDA4 <- rda(spe.hell ~ Al+C.N_ratio+P+Mg+pH_H2O , site_env_matrix.rda)
+RsquareAdj(RDA4)
+#-> R2=0.3710825, R= 0.6091654
+
+RDA4
+ordiplot(RDA4, type = "text")
+
+#sig of the whole model
+anova.cca(RDA4)
+#sig of each terms / variables chosen (terms sometimes change sig when order of variables are changed, margin X change with order)
+anova.cca(RDA4, by="terms")
+anova.cca(RDA4, by="margin")
+#sig of whether axes are explained
+anova.cca(RDA4, by="axis")
+vif.cca(RDA4)
+
+#Visualize % of variations explained by constrained and unconstrained axes
+constrained_eig <- RDA4$CCA$eig/RDA4$tot.chi*100
+unconstrained_eig <- RDA4$CA$eig/RDA4$tot.chi*100
+expl_var <- c(constrained_eig, unconstrained_eig)
+barplot (expl_var[1:20], col = c(rep ('red', length (constrained_eig)), rep ('black', length (unconstrained_eig))),
+         las = 2, ylab = '% variation')
+
+#Plotting RDA
+plot(RDA4)
+plot(RDA4, scaling = 1, display = c("sp", "lc", "cn"),
+     main = 'RDA')
+```
+
+
+#Multiple linear regression
+
+##Z score of env variables calculation and add to data for multiple linear regression for later use
+```{r}
+EnvZ <- site_env_matrixX %>% scale() %>% data.frame()
+write.csv(EnvZ, file = "EnvZ.csv")
+MLR <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Correlation test/MLR.csv")
+EnvZ$Plot <- MLR$Plot
+MLR_env <- left_join(MLR,EnvZ, by="Plot")
+
+MLR_envv <- MLR_env[, -1]
+rownames(MLR_envv) <- MLR_env$Plot
+
+#Data without grassland plots
+MLR_envv_Xgrass <- MLR_envv[-c(8, 9),]
+```
+
+
+##AGB
+
+
+###Only env variables
+```{r}
+lmenv1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmenv1)
+#-> adjusted R2: 0.5248 p: 0.2609
+
+##Stepwise selection
+steplmenv1 <- stats::step(lmenv1, direction = 'both')
+summary(steplmenv1)
+#-> Only C and N are significant variables
+
+##C and N model
+lmenv2 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, N, C)))
+summary(lmenv2)
+#-> adjusted R2: 0.4733 p: 0.004417
+
+##Check inflation of variables of C and N model
+lmenv2_vifs <- car::vif(lmenv2)
+print(lmenv2_vifs)
+#-> very high inflation, both above 14
+#-> Env variables alone cannot explain AGB differences
+```
+
+
+###Only env variables (X grassland plots)
+```{r}
+lmenv1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmenv1XGr)
+#-> adjusted R2: -1.025 p: 0.838
+
+##Stepwise selection
+steplmenv1XGr <- stats::step(lmenv1XGr, direction = 'both')
+summary(steplmenv1XGr)
+#-> only C and N are significant factors
+
+##C and N model
+lmenv2XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, N, C)))
+summary(lmenv2XGr)
+#-> adjusted R2: 0.3757 p: 0.02348
+
+##Check inflation of vairbales of C and N model
+lmenv2XGr_vifs <- car::vif(lmenv2XGr)
+print(lmenv2XGr_vifs)
+#-> both variables high inflation >9
+#-> Env variables alone cannot explain AGB differences
+#-> Similar result as data with grassland plots
+```
+
+
+###Standardized or corrected metrics and env variables
+```{r}
+##not all env variables are included as number of variables cannot be more than number of observations (17 plots)
+lmAllT1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, RaoFuncBiomass_ST, Species_richness,
+                                                              P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllT1)
+#-> adjusted R2: 0.6402 p: 0.1253
+
+##Stepwise selection
+steplmAllT1 <- stats::step(lmAllT1, direction = 'both')
+summary(steplmAllT1)
+#-> Significant variables: PD, MNTD, P, Mg
+
+##PD, MNTD, P, Mg model
+lmAllT2 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, PD_ST, MNTD_ST, P, Mg)))
+summary(lmAllT2)
+#-> adjusted R2: 0.3508 p: 0.05435
+#-> P is the only significant variable
+p.val.adj <- p.adjust(lmAllT2$pvalue, method = "holm", n = 13)
+print(p.val.adj)
+lmAllT2_vifs <- car::vif(lmAllT2)
+print(lmAllT2_vifs)
+#-> high inflation by PD (18.976790) and MNTD (17.803536)
+
+##Model with just P
+lmAllT3 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, P)))
+summary(lmAllT3)
+#-> adjusted R2: 0.446 p: 0.00203
+
+##Check normality of residuals
+residuals.lmAllT3 <- residuals(lmAllT3)
+plot(residuals.lmAllT3)
+#Q-Q plot
+qqnorm(residuals.lmAllT3)
+qqline(residuals.lmAllT3)
+#-> residuals fit the qqline
+```
+
+
+###Standardized or corrected metrics and env variables (X grassland plots)
+```{r}
+lmAllT1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, RaoFuncBiomass_ST, Species_richness,
+                                                                         P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllT1XGr)
+#-> adjusted R2: 0.08043 p: 0.5704
+
+##Stepwise selection
+steplmAllT1XGr <- stats::step(lmAllT1XGr, direction = 'both')
+summary(steplmAllT1XGr)
+#-> NO significant variables, but RaoFuncBiomass_ST, pH_H2O p value < 0.1
+
+##RaoFuncBiomass_ST, pH_H2O model
+lmAllT2XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, RaoFuncBiomass_ST, pH_H2O)))
+summary(lmAllT2XGr)
+#-> NO significant variables
+```
+
+
+###Not corrected metrics and env variables
+```{r}
+lmAllF1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, PD_SF, MPD_SF, MNTD_SF, RaoPhylo_SF, RaoFuncAbun_SF, RaoFuncBiomass_SF, Species_richness,
+                                                               P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllF1)
+#-> adjusted R2: 0.8201 p: 0.03653
+#-> MPD and P are significant variables
+
+##Stepwise selection
+steplmAllF1 <- stats::step(lmAllF1, direction = 'both')
+summary(steplmAllF1)
+#-> Significant variables: MPD, P, Al, C.N_ratio
+
+##MPD, P, Al, C.N_ratio model
+lmAllF2 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, MPD_SF, P, Al, C.N_ratio)))
+summary(lmAllF2)
+#-> adjusted R2: 0.8652 p: 6.82e-06
+#-> MPD, P, C.N_ratio are significant variables
+
+##MPD, P, C.N_ratio model
+lmAllF3 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, MPD_SF, P, C.N_ratio)))
+summary(lmAllF3)
+#-> adjusted R2: 0.8333 p: 6.497e-06
+#-> All variables significant
+
+
+##Check inflation of variabales of lmAllF3
+lmAllF3_vifs <- car::vif(lmAllF3)
+print(lmAllF3_vifs)
+#-> all variables have low inflation around 1
+
+##Check normality of residuals
+residuals.lmAllF3 <- residuals(lmAllF3)
+plot(residuals.lmAllF3)
+#Q-Q plot
+qqnorm(residuals.lmAllF3)
+qqline(residuals.lmAllF3)
+#-> part of residuals do not fit the qqline
+
+library(performance, sjPlot)
+performance::check_model(lmAllF3)
+sjPlot::plot_model(lmAllF3)
+performance::check_model(lmAllF3, check="homogeneity")
+#-> fair performance
+```
+
+
+###Not corrected metrics and env variables (X grassland plots)
+```{r}
+lmAllF1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, PD_SF, MPD_SF, MNTD_SF, RaoPhylo_SF, RaoFuncAbun_SF, RaoFuncBiomass_SF, Species_richness, 
+                                                               P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllF1XGr)
+#-> adjusted R2: 0.6998 p: 0.2313
+
+##Stepwise selection
+steplmAllF1XGr <- stats::step(lmAllF1XGr, direction = 'both')
+summary(steplmAllF1XGr)
+#-> Significant variables: Al, pH_H2O
+
+##Al pH_H2O model
+lmAllF2XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, Al, pH_H2O)))
+summary(lmAllF2XGr)
+#-> NO significant variables!!!!!!!!!!!!!!!!!!!!!!!!!!
+#-> adjusted R2: 0.08985 p: 0.2254
+```
+
+
+##FD (X AGB)
+
+
+###Corrected FDabun with all env variables
+```{r}
+lmFDSTAbunenv1 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncAbun_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmFDSTAbunenv1)
+#-> adjusted R2: 0.4837 p: 0.288
+
+##Stepwise selection
+steplmFDSTAbunenv1 <- stats::step(lmFDSTAbunenv1, direction = 'both')
+summary(steplmFDSTAbunenv1)
+#-> Only K and P are significant variables
+
+##K and P model
+lmFDSTAbunenv2 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncAbun_ST, K, P)))
+summary(lmFDSTAbunenv2)
+#-> Only P is a significant variable 
+
+## P model
+lmFDSTAbunenv3 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncAbun_ST, P)))
+summary(lmFDSTAbunenv3)
+#-> adjusted R2: 0.3435 p: 0.007922
+
+##Check normality of residuals
+residuals.lmFDSTAbunenv3 <- residuals(lmFDSTAbunenv3)
+plot(residuals.lmFDSTAbunenv3)
+#Q-Q plot
+qqnorm(residuals.lmFDSTAbunenv3)
+qqline(residuals.lmFDSTAbunenv3)
+#-> residuals generally fit the qqline
+```
+
+
+### Corrected FDabun with all env variables (X grassland plots)
+```{r}
+lmFDSTAbunenv1XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncAbun_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmFDSTAbunenv1XGr)
+#-> adjusted R2: 0.8653 p: 0.272
+
+##Stepwise selection
+steplmFDSTAbunenv1XGr <- stats::step(lmFDSTAbunenv1XGr, direction = 'both')
+summary(steplmFDSTAbunenv1XGr)
+#-> Significant variables: X.Sand, Ca, Al, N, C.N_ratio, P, Bulk_density
+
+##Second model
+lmFDSTAbunenv2XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncAbun_ST, X.Sand, Ca, Al, N, C.N_ratio, P, Bulk_density)))
+summary(lmFDSTAbunenv2XGr)
+#-> All variables are significant
+
+##Check inflation of variables
+lmFDSTAbunenv2XGr_vifs <- car::vif(lmFDSTAbunenv2XGr)
+print(lmFDSTAbunenv2XGr_vifs)
+
+##Remove variables inflation >5
+lmFDSTAbunenv3XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncAbun_ST, Al, C.N_ratio, P)))
+summary(lmFDSTAbunenv3XGr)
+#-> NO significant variables!!!!!!!!!!!!!
+```
+
+
+### Corrected FDbiomass with all env variables
+```{r}
+lmFDSTBiomassenv1 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncBiomass_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmFDSTBiomassenv1)
+#-> adjusted R2: -0.1297 p: 0.6393
+
+##Stepwise selection
+steplmFDSTBiomassenv1 <- stats::step(lmFDSTBiomassenv1, direction = 'both')
+summary(steplmFDSTBiomassenv1)
+#-> Only P is significant variables
+
+## P model
+lmFDSTBiomassenv2 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncBiomass_ST, P)))
+summary(lmFDSTBiomassenv2)
+#-> adjusted R2: 0.2668 p: 0.01964
+
+##Check normality of residuals
+residuals.lmFDSTBiomassenv2 <- residuals(lmFDSTBiomassenv2)
+plot(residuals.lmFDSTBiomassenv2)
+#Q-Q plot
+qqnorm(residuals.lmFDSTBiomassenv2)
+qqline(residuals.lmFDSTBiomassenv2)
+#-> residuals fit the qqline
+```
+
+
+### Corrected FDbiomass with all env variables (X grassland plots)
+```{r}
+lmFDSTBiomassenv1XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncBiomass_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
+summary(lmFDSTBiomassenv1XGr)
+#-> adjusted R2: -1.498 p: 0.8832
+
+##Stepwise selection
+steplmFDSTBiomassenv1XGr <- stats::step(lmFDSTBiomassenv1XGr, direction = 'both')
+summary(steplmFDSTBiomassenv1XGr)
+#-> Significant variables: X.Sand, C.N_ratio, pH_H2O, Bulk_density
+
+##Second model
+lmFDSTBiomassenv2XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncBiomass_ST, X.Sand, C.N_ratio, pH_H2O, Bulk_density)))
+summary(lmFDSTBiomassenv2XGr)
+#-> NO variables are significant!!!!!!!!!!!!!
+
+lmFDSTBiomassenv3XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncBiomass_ST, C.N_ratio, pH_H2O)))
+summary(lmFDSTBiomassenv3XGr)
+#-> NO variables are significant!!!!!!!!!!!!!
+car::vif(lmFDSTBiomassenv3XGr)
+```
+
+
+###Standardized or corrected metrics (FDabun) with selected env variables
+```{r}
+lmAllFDSTAbun1 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, Species_richness,
+                                                               P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllFDSTAbun1)
+#-> adjusted R2: 0.5604 p: 0.09321
+
+##Stepwise selection
+steplmAllFDSTAbun1 <- stats::step(lmAllFDSTAbun1, direction = 'both')
+summary(steplmAllFDSTAbun1)
+#-> only RaoPhylo_ST is a significant variable
+
+##RaoPhylo_ST model
+lmAllFDSTAbun2 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoPhylo_ST, RaoFuncAbun_ST)))
+summary(lmAllFDSTAbun2)
+#-> adjusted R2: 0.565 p: 0.0003038
+
+##Check normality of residuals
+residuals.lmAllFDSTAbun2<- residuals(lmAllFDSTAbun2)
+plot(residuals.lmAllFDSTAbun2)
+#Q-Q plot
+qqnorm(residuals.lmAllFDSTAbun2)
+qqline(residuals.lmAllFDSTAbun2)
+#-> residuals generally fit the qqline
+```
+
+
+###Standardized or corrected metrics (FDabun) with selected env variables (X grassland plots)
+```{r}
+lmAllFDSTAbun1XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, Species_richness,
+                                                                              P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllFDSTAbun1XGr)
+#-> adjusted R2: 0.3174 p: 0.3324
+
+##Stepwise selection
+steplmAllFDSTAbun1XGr <- stats::step(lmAllFDSTAbun1XGr, direction = 'both')
+summary(steplmAllFDSTAbun1XGr)
+#-> NO significant variables, RaoPhylo_ST 0.0713
+
+##RaoPhylo_ST model
+lmAllFDSTAbun2XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoPhylo_ST, RaoFuncAbun_ST)))
+summary(lmAllFDSTAbun2XGr)
+#-> adjusted R2: 0.4396 p: 0.004216, pretty well
+```
+
+
+###Standardized or corrected metrics (FDbiomass) with selected env variables
+```{r}
+lmAllFDSTBiomass1 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncBiomass_ST, Species_richness,
+                                                                              P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllFDSTBiomass1)
+#-> adjusted R2: 0.2486 p: 0.312
+
+##Stepwise selection
+steplmAllFDSTBiomass1 <- stats::step(lmAllFDSTBiomass1, direction = 'both')
+summary(steplmAllFDSTBiomass1)
+#-> only Species_richness is a significant variable
+
+##Species_richness model
+lmAllFDSTBiomass2 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncBiomass_ST, Species_richness)))
+summary(lmAllFDSTBiomass2)
+#-> adjusted R2: 0.3855 p: 0.00464
+
+##Check normality of residuals
+residuals.lmAllFDSTBiomass2<- residuals(lmAllFDSTBiomass2)
+plot(residuals.lmAllFDSTBiomass2)
+#Q-Q plot
+qqnorm(residuals.lmAllFDSTBiomass2)
+qqline(residuals.lmAllFDSTBiomass2)
+#-> residuals fit the qqline
+```
+
+
+###Standardized or corrected metrics (FDbiomass) with selected env variables (X grassland plots)
+```{r}
+lmAllFDSTBiomass1XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncBiomass_ST, Species_richness,
+                                                                                    P, Al, pH_H2O, Mg, C.N_ratio)))
+summary(lmAllFDSTBiomass1XGr)
+#-> adjusted R2: -0.095 p: 0.6072
+
+##Stepwise selection
+steplmAllFDSTBiomass1XGr <- stats::step(lmAllFDSTBiomass1XGr, direction = 'both')
+summary(steplmAllFDSTBiomass1XGr)
+#-> Significant variables: Species_richness, P
+
+##Species_richness, P model
+lmAllFDSTBiomass2XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncBiomass_ST, Species_richness, P)))
+summary(lmAllFDSTBiomass2XGr)
+#-> adjusted R2: 0.4787 p: 0.007957
+
+##Check inflation of variables
+lmAllFDSTBiomass2XGr_vifs <- car::vif(lmAllFDSTBiomass2XGr)
+print(lmAllFDSTBiomass2XGr_vifs)
+#-> all variables have low inflation around 1
+```
+
+#Chart of correlation matrix
+
+```{r}
+##species richness, functional-phylogenetic diversity and AGB (with grassland plots)
+chart.Correlation(MLR_envv[,c(1:14)])
+
+##species richness, functional-phylogenetic diversity and AGB (without grassland plots)
+chart.Correlation(MLR_envv_Xgrass[,c(1:14)])
+
+##soil variables, functional diversity metrics and AGB (with grassland plots)
+chart.Correlation(MLR_envv[,c(10:20, 22:28, 30)])
+
+##soil variables, functional diversity metrics and AGB (without grassland plots)
+chart.Correlation(MLR_envv_Xgrass[,c(10:20, 22:28, 30)])
+```
+
