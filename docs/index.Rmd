@@ -8,12 +8,11 @@ output:
   pdf_document: default
 ---
 
-library(tidyverse)
-
 
 #Extract max census date data (filter for data of latest census for each plot and remove 'Indet indet' species data)
 ```{r}
 stems_original <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Data/stems_original.csv")
+library(tidyverse)
 stemsmaxc <-stems_original %>%
   dplyr::group_by(plot_id) %>% 
   filter(census_date == max(census_date)) %>% 
@@ -379,19 +378,21 @@ Rao(t(data.frame(site_sp_matrixX)), dfunc = NULL, dphyl = p.dist.mat[colnames(si
 ###Calculation of trait means, then add them to 'sp_traits_funcmatrix' excel 
 ```{r}
       ####leaf area
+Total_leaf_area <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Leaf area measurement/Total_leaf_area.csv")
 as.character(Total_leaf_area$species)
-install.packages("data.table")
 library("data.table")
 TLA <- as.data.frame(Total_leaf_area)
 setDT(TLA)
 TLA[ ,list(mean=mean(Average_leaf_area)), by=species]
 
       ####LMA
+leaf_traits_lab <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Data/leaf_traits_lab.csv")
 LMA <- as.data.frame(leaf_traits_lab)
 setDT(LMA)
 LMA[ ,list(mean=mean(LMA)), by=species]
 
       ####%N%C
+MR_CN <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Data/MR_CN.csv")
 NC <- as.data.frame(MR_CN)
 setDT(NC)
 NC[ ,list(mean=mean(C)), by=species]
