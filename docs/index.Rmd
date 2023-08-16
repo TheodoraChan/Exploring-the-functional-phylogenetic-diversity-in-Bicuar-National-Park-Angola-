@@ -1,7 +1,8 @@
 ---
-title: "Bicuar Summer Project"
+title: "Exploring the functional-phylogenetic diversity in
+Bicuar National Park (Angola)"
 author: "Theodora Chan"
-date: "2023-07-14"
+date: "2023 Summer"
 output:
   html_document: default
   word_document: default
