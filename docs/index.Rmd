@@ -4,9 +4,11 @@ Bicuar National Park (Angola)"
 author: "Theodora Chan"
 date: "2023 Summer"
 output:
-  html_document: default
-  word_document: default
-  pdf_document: default
+  html_document:
+    number_section: True
+    toc: yes
+    code_folding: hide
+    code_download: true
 ---
 
 
