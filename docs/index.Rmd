@@ -5,14 +5,16 @@ author: "Theodora Chan"
 date: "2023 Summer"
 output:
   html_document:
-    number_section: True
+    number_section: false
     toc: yes
-    code_folding: hide
     code_download: true
+    toc_float:
+      collapsed: false
 ---
 
 
-#Extract max census date data (filter for data of latest census for each plot and remove 'Indet indet' species data)
+# Extract max census date data (filter for data of latest census for each plot and remove 'Indet indet' species data)
+
 ```{r}
 stems_original <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Data/stems_original.csv")
 library(tidyverse)
@@ -23,7 +25,8 @@ stemsmaxc <-stems_original %>%
 ```
 
 
-#Site species matrix
+# Site species matrix
+
 ```{r}
 library(MASS, reshape)
 stemsmaxc$value <- 1
@@ -33,7 +36,8 @@ site_sp_matrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bic
 ```
 
 
-#Phylogeny and phylogenetic distance matrix (distance between each pair of terminal taxa)
+# Phylogeny and phylogenetic distance matrix (distance between each pair of terminal taxa)
+
 ```{r}
 library(ape)
 library("V.PhyloMaker2")
@@ -65,7 +69,8 @@ p.dist.mat <- cophenetic(phylo$scenario.3)
 ```
 
 
-#Phylogenetic diversity metrics (PD, MPD and MNTD; excluding Rao's QE)
+# Phylogenetic diversity metrics (PD, MPD and MNTD; excluding Rao's QE)
+
 ```{r}
 library("PhyloMeasures")
 
@@ -88,10 +93,10 @@ mntd.query(phylo$scenario.3, site_sp_matrixX, standardize = FALSE)
 ```
 
 
-#Rao's QE
+# Rao's QE
 
+## Run code of function
 
-##Run code of function
 ```{r}
 library(ade4)
 Rao<-function(sample, dfunc, dphyl, weight=F, Jost=F, structure=NULL)   {
@@ -367,18 +372,20 @@ disc = function (samples, dis = NULL, structures = NULL, Jost = F)
 ```
 
 
-##Rao's QE Phylogenetic diversity
-  ###With correction to column names
+## Rao's QE Phylogenetic diversity
+
+### With correction to column names
+
 ```{r}
 Rao(t(data.frame(site_sp_matrixX)), dfunc = NULL, dphyl = p.dist.mat[colnames(site_sp_matrixX),colnames(site_sp_matrixX)], Jost=TRUE)$PD$Alpha
 Rao(t(data.frame(site_sp_matrixX)), dfunc = NULL, dphyl = p.dist.mat[colnames(site_sp_matrixX),colnames(site_sp_matrixX)], Jost=FALSE)$PD$Alpha
 ```
 
 
-##Rao's QE Functional diversity
+## Rao's QE Functional diversity
 
+### Calculation of trait means, then add them to 'sp_traits_funcmatrix' excel 
 
-###Calculation of trait means, then add them to 'sp_traits_funcmatrix' excel 
 ```{r}
       ####leaf area
 Total_leaf_area <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/Leaf area measurement/Total_leaf_area.csv")
@@ -403,7 +410,8 @@ NC[ ,list(mean=mean(N)), by=species]
 ```
 
 
-###Checking normality of trait data
+### Checking normality of trait data
+
   ####result: Leaf_area, LMA not normal
 ```{r}
 sp_traits_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/sp_traits_funcmatrix.csv")
@@ -422,7 +430,8 @@ apply(sp_traits_funcmatrixx, 2, FUN=shapiro.test)
 ```
 
 
-###Transformation of Leaf_area and LMA
+### Transformation of Leaf_area and LMA
+
 ```{r}
 hist(sp_traits_funcmatrixx$Leaf_area %>% log()) 
 qqnorm(sp_traits_funcmatrixx$Leaf_area %>% log())
@@ -443,7 +452,8 @@ shapiro.test(sp_traits_funcmatrixx$Leaf_area.tr)
 ```
 
 
-###Functional dissimilarity matrix building
+### Functional dissimilarity matrix building
+
 ```{r}
 library("gawdis")
 func.dist.matrix <- gawdis::gawdis(sp_traits_funcmatrixx %>% 
@@ -459,7 +469,8 @@ View(colnames(as.matrix(func.dist.matrix)))
 ```
 
 
-###Subset data for the 29 species with functional trait data
+### Subset data for the 29 species with functional trait data
+
 ```{r}
       ####Make subset of the 29 species data from original data, 8398/9090 observations extracted (92.39%)
 list.func.spp <- sp_traits_funcmatrix$Species
@@ -481,7 +492,8 @@ write.csv(x = new.object2, file = "site_spabun_funcmatrix.csv", row.names = T)
 ```
 
 
-###FD calculation using species abundance
+### FD calculation using species abundance
+
 ```{r}
 site_spabun_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_spabun_funcmatrix.csv")
 site_spabun_funcmatrixx <- site_spabun_funcmatrix[,-c(1,2)]
@@ -493,7 +505,8 @@ Rao(t(site_spabun_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=FAL
 ```
 
 
-###FD calculation using species biomass
+### FD calculation using species biomass
+
 ```{r}
 site_spmass_funcmatrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_spmass_funcmatrix.csv")
 site_spmass_funcmatrixx <- site_spmass_funcmatrix[,-1]
@@ -505,9 +518,10 @@ Rao(t(site_spmass_funcmatrixx), dfunc = func.dist.matrix, dphyl = NULL, Jost=FAL
 ```
 
 
-#PCA
+# PCA
 
-##z-score standardization of env variables
+## z-score standardization of env variables
+
 ```{r}
 site_env_matrix <- read.csv("C:/Users/HP/University of Edinburgh/Theodora MSc Bicuar - Documents/General/PD and trait matrix/site_env_matrix.csv")
 site_env_matrixX <- site_env_matrix[,-1]
@@ -519,7 +533,8 @@ site_env_matrix.rda <- site_env_matrixX %>%
 ```
 
 
-##Analysis and visualization of results
+## Analysis and visualization of results
+
 ```{r}
 ##for looking into the correlation between soil variables before running the RDA
 
@@ -555,7 +570,8 @@ fviz_pca_biplot(pca.sp, repel = TRUE,
 ```
 
 
-#RDA
+# RDA
+
 ```{r}
 library(ade4)
 library(adegraphics)
@@ -573,7 +589,8 @@ chart.Correlation(site_env_matrixX)
 ```
 
 
-##First RDA with all variables
+## First RDA with all variables
+
 ```{r}
 site_env_matrix.rda
 
@@ -586,7 +603,8 @@ anova.cca(RDA)
 ```
 
 
-##Stepwise selection in both directions
+## Stepwise selection in both directions
+
 ```{r}
     ###Null model
 null.rda <- rda(spe.hell ~ 1, site_env_matrix.rda)
@@ -599,7 +617,8 @@ anova.cca(sel.ordi2step)
 ```
 
 
-##New RDA using selected variables + variables not showing sig correlation with the selected ones (Al, X.Sand, pH_H2O, Ca, Na_Radial) until highest R2 and significance
+## New RDA using selected variables + variables not showing sig correlation with the selected ones (Al, X.Sand, pH_H2O, Ca, Na_Radial) until highest R2 and significance
+
 ```{r}
 RDA2 <- rda(spe.hell ~ C.N_ratio+P+Mg+Al+X.Sand+pH_H2O+Ca+Na_Radial , site_env_matrix.rda)
 RDA3 <- rda(spe.hell ~ C.N_ratio+P+Mg+Al , site_env_matrix.rda)
@@ -633,9 +652,10 @@ plot(RDA4, scaling = 1, display = c("sp", "lc", "cn"),
 ```
 
 
-#Multiple linear regression
+# Multiple linear regression
 
-##Z score of env variables calculation and add to data for multiple linear regression for later use
+## Z score of env variables calculation and add to data for multiple linear regression for later use
+
 ```{r}
 EnvZ <- site_env_matrixX %>% scale() %>% data.frame()
 write.csv(EnvZ, file = "EnvZ.csv")
@@ -651,10 +671,10 @@ MLR_envv_Xgrass <- MLR_envv[-c(8, 9),]
 ```
 
 
-##AGB
+## AGB
 
+### Only env variables
 
-###Only env variables
 ```{r}
 lmenv1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmenv1)
@@ -678,7 +698,8 @@ print(lmenv2_vifs)
 ```
 
 
-###Only env variables (X grassland plots)
+### Only env variables (X grassland plots)
+
 ```{r}
 lmenv1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmenv1XGr)
@@ -703,7 +724,8 @@ print(lmenv2XGr_vifs)
 ```
 
 
-###Standardized or corrected metrics and env variables
+### Standardized or corrected metrics and env variables
+
 ```{r}
 ##not all env variables are included as number of variables cannot be more than number of observations (17 plots)
 lmAllT1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, RaoFuncBiomass_ST, Species_richness,
@@ -742,7 +764,8 @@ qqline(residuals.lmAllT3)
 ```
 
 
-###Standardized or corrected metrics and env variables (X grassland plots)
+### Standardized or corrected metrics and env variables (X grassland plots)
+
 ```{r}
 lmAllT1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, RaoFuncBiomass_ST, Species_richness,
                                                                          P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -761,7 +784,8 @@ summary(lmAllT2XGr)
 ```
 
 
-###Not corrected metrics and env variables
+### Not corrected metrics and env variables
+
 ```{r}
 lmAllF1 <- lm(AGBmax ~ . , data = MLR_envv %>% dplyr::select(c(AGBmax, PD_SF, MPD_SF, MNTD_SF, RaoPhylo_SF, RaoFuncAbun_SF, RaoFuncBiomass_SF, Species_richness,
                                                                P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -808,7 +832,8 @@ performance::check_model(lmAllF3, check="homogeneity")
 ```
 
 
-###Not corrected metrics and env variables (X grassland plots)
+### Not corrected metrics and env variables (X grassland plots)
+
 ```{r}
 lmAllF1XGr <- lm(AGBmax ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(AGBmax, PD_SF, MPD_SF, MNTD_SF, RaoPhylo_SF, RaoFuncAbun_SF, RaoFuncBiomass_SF, Species_richness, 
                                                                P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -828,10 +853,10 @@ summary(lmAllF2XGr)
 ```
 
 
-##FD (X AGB)
+## FD (X AGB)
 
+### Corrected FDabun with all env variables
 
-###Corrected FDabun with all env variables
 ```{r}
 lmFDSTAbunenv1 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncAbun_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmFDSTAbunenv1)
@@ -863,6 +888,7 @@ qqline(residuals.lmFDSTAbunenv3)
 
 
 ### Corrected FDabun with all env variables (X grassland plots)
+
 ```{r}
 lmFDSTAbunenv1XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncAbun_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmFDSTAbunenv1XGr)
@@ -890,6 +916,7 @@ summary(lmFDSTAbunenv3XGr)
 
 
 ### Corrected FDbiomass with all env variables
+
 ```{r}
 lmFDSTBiomassenv1 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(RaoFuncBiomass_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmFDSTBiomassenv1)
@@ -916,6 +943,7 @@ qqline(residuals.lmFDSTBiomassenv2)
 
 
 ### Corrected FDbiomass with all env variables (X grassland plots)
+
 ```{r}
 lmFDSTBiomassenv1XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(RaoFuncBiomass_ST, X.Sand:Bulk_density, -Na_Axial, -pH_KCl)))
 summary(lmFDSTBiomassenv1XGr)
@@ -938,7 +966,8 @@ car::vif(lmFDSTBiomassenv3XGr)
 ```
 
 
-###Standardized or corrected metrics (FDabun) with selected env variables
+### Standardized or corrected metrics (FDabun) with selected env variables
+
 ```{r}
 lmAllFDSTAbun1 <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, Species_richness,
                                                                P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -965,7 +994,8 @@ qqline(residuals.lmAllFDSTAbun2)
 ```
 
 
-###Standardized or corrected metrics (FDabun) with selected env variables (X grassland plots)
+### Standardized or corrected metrics (FDabun) with selected env variables (X grassland plots)
+
 ```{r}
 lmAllFDSTAbun1XGr <- lm(RaoFuncAbun_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncAbun_ST, Species_richness,
                                                                               P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -984,7 +1014,8 @@ summary(lmAllFDSTAbun2XGr)
 ```
 
 
-###Standardized or corrected metrics (FDbiomass) with selected env variables
+### Standardized or corrected metrics (FDbiomass) with selected env variables
+
 ```{r}
 lmAllFDSTBiomass1 <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncBiomass_ST, Species_richness,
                                                                               P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -1011,7 +1042,8 @@ qqline(residuals.lmAllFDSTBiomass2)
 ```
 
 
-###Standardized or corrected metrics (FDbiomass) with selected env variables (X grassland plots)
+### Standardized or corrected metrics (FDbiomass) with selected env variables (X grassland plots)
+
 ```{r}
 lmAllFDSTBiomass1XGr <- lm(RaoFuncBiomass_ST ~ . , data = MLR_envv_Xgrass %>% dplyr::select(c(PD_ST, MPD_ST, MNTD_ST, RaoPhylo_ST, RaoFuncBiomass_ST, Species_richness,
                                                                                     P, Al, pH_H2O, Mg, C.N_ratio)))
@@ -1034,7 +1066,7 @@ print(lmAllFDSTBiomass2XGr_vifs)
 #-> all variables have low inflation around 1
 ```
 
-#Chart of correlation matrix
+# Chart of correlation matrix
 
 ```{r}
 ##species richness, functional-phylogenetic diversity and AGB (with grassland plots)
